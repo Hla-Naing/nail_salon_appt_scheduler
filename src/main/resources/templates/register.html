@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: head('Create Account')}"></head>
+<body>
+<nav th:replace="~{fragments :: nav}"></nav>
+<main class="container">
+    <div class="card p-4 mx-auto" style="max-width:460px">
+        <h1 class="h2">Create Account</h1>
+        <p>Create a customer account to book nail appointments.</p>
+        <div th:if="${error != null}" class="alert alert-danger" role="alert" th:text="${error}"></div>
+        <form method="post" th:action="@{/web/register}">
+            <input type="hidden" name="csrfToken" th:value="${csrfToken}">
+            <label for="name" class="form-label">Name</label>
+            <input id="name" name="name" type="text" class="form-control mb-3" th:value="${name}" required maxlength="100" autocomplete="name">
+            <label for="username" class="form-label">Username</label>
+            <input id="username" name="username" type="text" class="form-control mb-3" th:value="${username}" required maxlength="50" autocomplete="username">
+            <label for="password" class="form-label">Password</label>
+            <input id="password" name="password" type="password" class="form-control mb-3" required minlength="8" maxlength="72" autocomplete="new-password">
+            <label for="confirmPassword" class="form-label">Confirm Password</label>
+            <input id="confirmPassword" name="confirmPassword" type="password" class="form-control mb-4" required minlength="8" maxlength="72" autocomplete="new-password">
+            <button type="submit" class="btn btn-primary w-100">Create Account</button>
+        </form>
+        <p class="mt-3 mb-2">Already have an account? <a th:href="@{/web/login}">Log in</a></p>
+        <a th:href="@{/web}">Back to home</a>
+    </div>
+</main>
+<footer th:replace="~{fragments :: footer}"></footer>
+</body>
+</html>

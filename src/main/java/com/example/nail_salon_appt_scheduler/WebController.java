@@ -46,6 +46,29 @@ public class WebController {
     @GetMapping("/login")
     public String login() { return "login"; }
 
+    @GetMapping("/register")
+    public String register() { return "register"; }
+
+    @PostMapping("/register")
+    public String register(@RequestParam(defaultValue = "") String name,
+                           @RequestParam(defaultValue = "") String username,
+                           @RequestParam(defaultValue = "") String password,
+                           @RequestParam(defaultValue = "") String confirmPassword,
+                           HttpServletResponse response, Model model, RedirectAttributes flash) {
+        try {
+            auth.registerCustomer(name, username, password, confirmPassword);
+            flash.addFlashAttribute("success", "Account created successfully. You can now log in.");
+            return "redirect:/web/login";
+        } catch (ResponseStatusException e) {
+            if (e.getStatusCode().value() != 400) throw e;
+            response.setStatus(400);
+            model.addAttribute("error", e.getReason());
+            model.addAttribute("name", name);
+            model.addAttribute("username", username);
+            return "register";
+        }
+    }
+
     @PostMapping("/login")
     public String login(@RequestParam String username, @RequestParam String password,
                         HttpServletRequest request, HttpServletResponse response, Model model) {
