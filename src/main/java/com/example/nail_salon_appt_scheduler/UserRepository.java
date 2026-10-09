@@ -16,6 +16,20 @@ public class UserRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
+    public boolean usernameExists(String username) {
+        return jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM users WHERE LOWER(username) = LOWER(?)",
+                Long.class, username) > 0;
+    }
+
+    public Long createCustomer(String name, String username, String passwordHash) {
+        return jdbcTemplate.queryForObject("""
+                INSERT INTO users (name, username, password_hash, role)
+                VALUES (?, ?, ?, 'CUSTOMER')
+                RETURNING user_id
+                """, Long.class, name, username, passwordHash);
+    }
+
     public Optional<UserAccount> findByUsername(String username) {
 
         String sql = """
@@ -64,4 +78,3 @@ public class UserRepository {
     }
 
 }
-

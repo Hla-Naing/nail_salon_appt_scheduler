@@ -15,6 +15,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.server.ResponseStatusException;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -25,6 +26,8 @@ abstract class PostgresWorkflowSuite {
     @Autowired JdbcTemplate jdbc;
     @Autowired AppointmentService booking;
     @Autowired ProviderService providers;
+    @Autowired AuthService auth;
+    @Autowired UserRepository users;
     @Autowired MockMvc mvc;
     long customer1, customer2, providerUser, otherProviderUser, providerId, otherProviderId, serviceId, slotId;
     String suffix;
@@ -56,12 +59,118 @@ abstract class PostgresWorkflowSuite {
         jdbc.update("DELETE FROM services WHERE service_id=?",serviceId);
         jdbc.update("DELETE FROM providers WHERE provider_id IN (?,?)",providerId,otherProviderId);
         jdbc.update("DELETE FROM users WHERE user_id IN (?,?,?,?)",customer1,customer2,providerUser,otherProviderUser);
+        jdbc.update("DELETE FROM users WHERE LOWER(username) IN (?,?)", "registered"+suffix, "racing"+suffix);
     }
     MockHttpSession login(String name) throws Exception {
         return (MockHttpSession)mvc.perform(post("/auth/login").contentType("application/json")
                 .content("{\"username\":\""+name+suffix+"\",\"password\":\""+PASSWORD+"\"}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.passwordHash").doesNotExist())
                 .andReturn().getRequest().getSession(false);
+    }
+
+    @Test void publicRegistrationCreatesOnlyCustomerAndExistingLoginWorks() throws Exception {
+        var page = mvc.perform(get("/web/register")).andExpect(status().isOk())
+                .andExpect(view().name("register"))
+                .andExpect(content().string(containsString("action=\"/web/register\"")))
+                .andExpect(content().string(containsString("name=\"csrfToken\"")))
+                .andExpect(content().string(not(containsString("name=\"role\"")))).andReturn();
+        var session = (MockHttpSession) page.getRequest().getSession();
+        String username = "registered"+suffix;
+        var result = mvc.perform(post("/web/register").session(session)
+                .param("csrfToken", (String)session.getAttribute("csrfToken"))
+                .param("name", " Test Customer ").param("username", " "+username+" ")
+                .param("password", PASSWORD).param("confirmPassword", PASSWORD).param("role", "PROVIDER"))
+                .andExpect(redirectedUrl("/web/login"))
+                .andExpect(flash().attribute("success", "Account created successfully. You can now log in."))
+                .andReturn();
+        assertNull(session.getAttribute("userId"), "Registration must not log the user in");
+        var created = users.findByUsername(username).orElseThrow();
+        assertEquals("Test Customer", created.name());
+        assertEquals("CUSTOMER", created.role());
+        assertNotEquals(PASSWORD, created.passwordHash());
+        assertTrue(created.passwordHash().startsWith("$2"));
+        assertTrue(new BCryptPasswordEncoder().matches(PASSWORD, created.passwordHash()));
+        assertEquals(created, auth.authenticate(username, PASSWORD));
+        mvc.perform(get("/web/login").session(session).flashAttrs(result.getFlashMap()))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("alert alert-success")))
+                .andExpect(content().string(containsString("Account created successfully. You can now log in.")))
+                .andExpect(content().string(containsString("href=\"/web/register\"")));
+        var logged = mvc.perform(post("/web/login").session(session)
+                .param("csrfToken", (String)session.getAttribute("csrfToken"))
+                .param("username", username).param("password", PASSWORD))
+                .andExpect(redirectedUrl("/web/appointments")).andReturn();
+        var customer = (MockHttpSession)logged.getRequest().getSession();
+        assertEquals(created.userId(), customer.getAttribute("userId"));
+        mvc.perform(get("/web/appointments").session(customer)).andExpect(status().isOk());
+        mvc.perform(get("/web/provider").session(customer)).andExpect(status().isForbidden());
+    }
+
+    @Test void registrationValidationPreservesOnlyPublicFieldsAndRequiresCsrf() throws Exception {
+        var page = mvc.perform(get("/web/register")).andReturn();
+        var session = (MockHttpSession)page.getRequest().getSession();
+        mvc.perform(post("/web/register").session(session).param("name", "Name")
+                .param("username", "registered"+suffix).param("password", PASSWORD).param("confirmPassword", PASSWORD))
+                .andExpect(status().isForbidden());
+        String[][] cases = {
+                {"CUSTOMER1"+suffix.toUpperCase(Locale.ROOT), PASSWORD, PASSWORD, "Username is already taken"},
+                {"registered"+suffix, PASSWORD, "different123", "Passwords do not match"},
+                {"registered"+suffix, "short12", "short12", "Password must be at least 8 characters"}
+        };
+        for (String[] input : cases) {
+            mvc.perform(post("/web/register").session(session)
+                    .param("csrfToken", (String)session.getAttribute("csrfToken"))
+                    .param("name", "Test Customer").param("username", input[0])
+                    .param("password", input[1]).param("confirmPassword", input[2]))
+                    .andExpect(status().isBadRequest()).andExpect(view().name("register"))
+                    .andExpect(model().attribute("error", input[3]))
+                    .andExpect(model().attribute("name", "Test Customer"))
+                    .andExpect(model().attribute("username", input[0]))
+                    .andExpect(model().attributeDoesNotExist("password", "confirmPassword", "passwordHash", "user"))
+                    .andExpect(content().string(containsString("value=\"Test Customer\"")))
+                    .andExpect(content().string(containsString("value=\""+input[0]+"\"")))
+                    .andExpect(content().string(not(matchesPattern("(?s).*<input(?=[^>]*type=\"password\")(?=[^>]*value=)[^>]*>.*"))));
+        }
+        mvc.perform(post("/web/register").session(session)
+                .param("csrfToken", (String)session.getAttribute("csrfToken")))
+                .andExpect(status().isBadRequest()).andExpect(view().name("register"))
+                .andExpect(model().attribute("error", "Name is required"));
+        assertFalse(users.usernameExists("registered"+suffix));
+    }
+
+    @Test void concurrentCaseInsensitiveRegistrationsCreateOnlyOneAccount() throws Exception {
+        var executor = Executors.newFixedThreadPool(2);
+        var ready = new CountDownLatch(2);
+        var go = new CountDownLatch(1);
+        try {
+            List<Future<String>> results = new ArrayList<>();
+            for (String username : List.of("racing"+suffix, "RACING"+suffix.toUpperCase(Locale.ROOT))) {
+                results.add(executor.submit(() -> {
+                    ready.countDown();
+                    if (!go.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Start barrier timed out");
+                    try {
+                        auth.registerCustomer("Name", username, PASSWORD, PASSWORD);
+                        return "SUCCESS";
+                    } catch (ResponseStatusException e) {
+                        assertEquals(400, e.getStatusCode().value());
+                        assertEquals("Username is already taken", e.getReason());
+                        return "DUPLICATE";
+                    }
+                }));
+            }
+            assertTrue(ready.await(10, TimeUnit.SECONDS));
+            go.countDown();
+            List<String> outcomes = new ArrayList<>();
+            for (var result : results) outcomes.add(result.get(15, TimeUnit.SECONDS));
+            assertEquals(1, Collections.frequency(outcomes, "SUCCESS"));
+            assertEquals(1, Collections.frequency(outcomes, "DUPLICATE"));
+            assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM users WHERE LOWER(username)=?",
+                    Integer.class, "racing"+suffix));
+            assertThrows(org.springframework.dao.DuplicateKeyException.class,
+                    () -> users.createCustomer("Name", "RACING"+suffix.toUpperCase(Locale.ROOT), HASH));
+        } finally {
+            go.countDown(); executor.shutdownNow(); assertTrue(executor.awaitTermination(10, TimeUnit.SECONDS));
+        }
     }
 
     @Test void exactlyOneOfTwoConcurrentCustomersBooksTheSlot() throws Exception {

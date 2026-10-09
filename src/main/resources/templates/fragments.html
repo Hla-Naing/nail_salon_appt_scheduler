@@ -8,6 +8,7 @@
 <a class="text-white" th:if="${viewer != null and viewer.role == 'CUSTOMER'}" th:href="@{/web/appointments}">My appointments</a>
 <a class="text-white" th:if="${viewer != null and viewer.role == 'PROVIDER'}" th:href="@{/web/provider}">Provider dashboard</a>
 <a class="text-white" th:if="${viewer == null}" th:href="@{/web/login}">Login</a>
+<a class="text-white" th:if="${viewer == null}" th:href="@{/web/register}">Create Account</a>
 <form th:if="${viewer != null}" th:action="@{/web/logout}" method="post"><input type="hidden" name="csrfToken" th:value="${csrfToken}"><button class="btn btn-sm btn-outline-light">Logout</button></form></div></nav>
 <div th:fragment="notice" th:if="${message != null}" class="alert alert-info" role="status" th:text="${message}"></div>
 <footer th:fragment="footer" class="container py-5 text-secondary"><small>All times are shown in America/Los_Angeles (Pacific time). CMPE 172 demo.</small></footer>
