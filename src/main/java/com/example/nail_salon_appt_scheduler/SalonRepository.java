@@ -1,6 +1,7 @@
 package com.example.nail_salon_appt_scheduler;
 
 import java.util.List;
+
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -20,29 +21,84 @@ public class SalonRepository {
         return jdbc.queryForObject("SELECT COUNT(*) FROM providers", Integer.class);
     }
 
-    public List<SlotDto> findAvailableSlots() {
-        String sql = """
-            SELECT a.slot_id, u.name AS provider_name, s.name AS service_name,
-                   s.duration_minutes, s.price, a.start_at, a.end_at
-            FROM availability_slots a
-            JOIN providers p ON p.provider_id = a.provider_id
-            JOIN users u ON u.user_id = p.user_id
-            JOIN services s ON s.service_id = a.service_id
-            WHERE NOT EXISTS (
-                SELECT 1 FROM appointments ap
-                WHERE ap.slot_id = a.slot_id AND ap.status = 'BOOKED'
-            )
-            ORDER BY a.start_at
-            """;
+    public List<SlotDto> findAvailableSlots(
+        Long providerId,
+        Long serviceId,
+        java.time.LocalDate date,
+        int limit,
+        int offset) {
 
-        return jdbc.query(sql, (rs, rowNum) -> new SlotDto(
-            rs.getLong("slot_id"),
-            rs.getString("provider_name"),
-            rs.getString("service_name"),
-            rs.getInt("duration_minutes"),
-            rs.getDouble("price"),
-            rs.getObject("start_at", java.time.OffsetDateTime.class),
-            rs.getObject("end_at", java.time.OffsetDateTime.class)
-        ));
+        StringBuilder sql = new StringBuilder("""
+                SELECT
+                    a.slot_id,
+                    u.name AS provider_name,
+                    s.name AS service_name,
+                    s.duration_minutes,
+                    s.price,
+                    a.start_at,
+                    a.end_at
+                FROM availability_slots a
+                JOIN providers p
+                    ON p.provider_id = a.provider_id
+                JOIN users u
+                    ON u.user_id = p.user_id
+                JOIN services s
+                    ON s.service_id = a.service_id
+                WHERE a.start_at > CURRENT_TIMESTAMP
+                AND NOT EXISTS (
+                        SELECT 1
+                        FROM appointments ap
+                        WHERE ap.slot_id = a.slot_id
+                        AND ap.status = 'BOOKED'
+                )
+                """);
+
+        List<Object> params = new java.util.ArrayList<>();
+
+        if (providerId != null) {
+            sql.append(" AND a.provider_id = ?");
+            params.add(providerId);
+        }
+
+        if (serviceId != null) {
+            sql.append(" AND a.service_id = ?");
+            params.add(serviceId);
+        }
+
+        if (date != null) {
+            sql.append(" AND a.start_at::date = ?");
+            params.add(date);
+        }
+
+        sql.append("""
+                ORDER BY a.start_at
+                LIMIT ?
+                OFFSET ?
+                """);
+
+        params.add(limit);
+        params.add(offset);
+
+        return jdbc.query(
+                sql.toString(),
+                (rs, rowNum) -> new SlotDto(
+                        rs.getLong("slot_id"),
+                        rs.getString("provider_name"),
+                        rs.getString("service_name"),
+                        rs.getInt("duration_minutes"),
+                        rs.getDouble("price"),
+                        rs.getObject(
+                                "start_at",
+                                java.time.OffsetDateTime.class
+                        ),
+                        rs.getObject(
+                                "end_at",
+                                java.time.OffsetDateTime.class
+                        )
+                ),
+                params.toArray()
+        );
     }
+
+    
 }

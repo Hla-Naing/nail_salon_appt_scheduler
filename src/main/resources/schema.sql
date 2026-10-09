@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS appointments (
     customer_id BIGINT NOT NULL REFERENCES users(user_id),
     slot_id BIGINT NOT NULL REFERENCES availability_slots(slot_id),
     status VARCHAR(20) NOT NULL DEFAULT 'BOOKED'
-        CHECK (status IN ('BOOKED', 'CANCELLED')),
+        CHECK (status IN ('BOOKED', 'CANCELLED', 'COMPLETED')),
     booked_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     cancelled_at TIMESTAMPTZ,
     fee_charged NUMERIC(10, 2) NOT NULL DEFAULT 0

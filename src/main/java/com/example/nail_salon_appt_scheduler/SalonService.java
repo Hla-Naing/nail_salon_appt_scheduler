@@ -1,6 +1,7 @@
 package com.example.nail_salon_appt_scheduler;
 
 import java.util.List;
+
 import org.springframework.stereotype.Service;
 
 @Service
@@ -19,7 +20,21 @@ public class SalonService {
         );
     }
 
-    public List<SlotDto> getAvailableSlots() {
-        return repository.findAvailableSlots();
+    public List<SlotDto> getAvailableSlots(
+        Long providerId,
+        Long serviceId,
+        java.time.LocalDate date,
+        int page,
+        int size) {
+
+        int offset = page * size;
+
+        return repository.findAvailableSlots(
+                providerId,
+                serviceId,
+                date,
+                size,
+                offset
+        );
     }
 }

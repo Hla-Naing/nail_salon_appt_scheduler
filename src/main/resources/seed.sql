@@ -1,8 +1,9 @@
 INSERT INTO users (name, username, password_hash, role)
 VALUES
-    ('Maya Chen', 'maya', 'DEMO_LOGIN_NOT_ENABLED', 'CUSTOMER'),
-    ('Anna Lee', 'anna', 'DEMO_LOGIN_NOT_ENABLED', 'PROVIDER'),
-    ('Sofia Kim', 'sofia', 'DEMO_LOGIN_NOT_ENABLED', 'PROVIDER')
+    ('Maya Chen', 'maya', '$2a$10$VrIStGlGMM0KiC51OrecVOAMDZZ/soTTM.58gUp1Ovq9E1wa3LWkm', 'CUSTOMER'),
+    ('Anna Lee', 'anna', '$2a$10$VrIStGlGMM0KiC51OrecVOAMDZZ/soTTM.58gUp1Ovq9E1wa3LWkm', 'PROVIDER'),
+    ('Sofia Kim', 'sofia', '$2a$10$VrIStGlGMM0KiC51OrecVOAMDZZ/soTTM.58gUp1Ovq9E1wa3LWkm', 'PROVIDER'),
+    ('Lily Park', 'lily', '$2a$10$VrIStGlGMM0KiC51OrecVOAMDZZ/soTTM.58gUp1Ovq9E1wa3LWkm', 'CUSTOMER')
 ON CONFLICT (username) DO NOTHING;
 
 INSERT INTO providers (user_id, specialty)
