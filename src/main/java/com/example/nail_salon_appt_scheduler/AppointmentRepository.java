@@ -23,7 +23,7 @@ public class AppointmentRepository {
         String sql = """
                 SELECT start_at
                 FROM availability_slots
-                WHERE slot_id = ?
+                WHERE slot_id = ? AND removed_at IS NULL
                 FOR UPDATE
                 """;
 
@@ -72,6 +72,15 @@ public class AppointmentRepository {
                 customerId,
                 slotId
         );
+    }
+
+    public int completePastAppointments() {
+        return jdbcTemplate.update("""
+                UPDATE appointments a SET status = 'COMPLETED'
+                FROM availability_slots av
+                WHERE a.slot_id = av.slot_id AND a.status = 'BOOKED'
+                  AND av.end_at < CURRENT_TIMESTAMP
+                """);
     }
 
     // Get all appointments belonging to one customer.

@@ -31,3 +31,9 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Local session credentials
+cookies.txt
+maya_cookies.txt
+lily_cookies.txt
+anna_cookies.txt

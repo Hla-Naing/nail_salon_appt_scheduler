@@ -20,6 +20,23 @@ public class SessionAuthService {
     public UserAccount requireRole(
             HttpServletRequest request, String requiredRole) {
 
+        UserAccount user = requireUser(request);
+        if (!user.role().equals(requiredRole)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+        }
+        return user;
+    }
+
+    public void login(HttpServletRequest request, UserAccount user) {
+        HttpSession previous = request.getSession(false);
+        if (previous != null) previous.invalidate();
+        HttpSession session = request.getSession(true);
+        request.changeSessionId();
+        session.setAttribute("userId", user.userId());
+        session.setAttribute("role", user.role());
+    }
+
+    public UserAccount requireUser(HttpServletRequest request) {
         HttpSession session = request.getSession(false);
 
         if (session == null ||
@@ -31,11 +48,6 @@ public class SessionAuthService {
         UserAccount user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.UNAUTHORIZED, "Account not found"));
-
-        if (!user.role().equals(requiredRole)) {
-            throw new ResponseStatusException(
-                    HttpStatus.FORBIDDEN, "Access denied");
-        }
 
         return user;
     }

@@ -13,6 +13,18 @@ public class SalonRepository {
         this.jdbc = jdbc;
     }
 
+    public record Choice(Long id, String name) {}
+
+    public List<Choice> providers() {
+        return jdbc.query("SELECT p.provider_id, u.name FROM providers p JOIN users u ON u.user_id=p.user_id ORDER BY u.name",
+                (rs, n) -> new Choice(rs.getLong(1), rs.getString(2)));
+    }
+
+    public List<Choice> services() {
+        return jdbc.query("SELECT service_id, name FROM services ORDER BY name",
+                (rs, n) -> new Choice(rs.getLong(1), rs.getString(2)));
+    }
+
     public int countServices() {
         return jdbc.queryForObject("SELECT COUNT(*) FROM services", Integer.class);
     }
@@ -26,7 +38,7 @@ public class SalonRepository {
         Long serviceId,
         java.time.LocalDate date,
         int limit,
-        int offset) {
+        long offset) {
 
         StringBuilder sql = new StringBuilder("""
                 SELECT
@@ -44,7 +56,7 @@ public class SalonRepository {
                     ON u.user_id = p.user_id
                 JOIN services s
                     ON s.service_id = a.service_id
-                WHERE a.start_at > CURRENT_TIMESTAMP
+                WHERE a.start_at > CURRENT_TIMESTAMP AND a.removed_at IS NULL
                 AND NOT EXISTS (
                         SELECT 1
                         FROM appointments ap
@@ -66,12 +78,13 @@ public class SalonRepository {
         }
 
         if (date != null) {
-            sql.append(" AND a.start_at::date = ?");
+            sql.append(" AND (a.start_at AT TIME ZONE 'America/Los_Angeles')::date = ?");
             params.add(date);
         }
 
+        sql.append("\n");
         sql.append("""
-                ORDER BY a.start_at
+                ORDER BY a.start_at, a.slot_id
                 LIMIT ?
                 OFFSET ?
                 """);

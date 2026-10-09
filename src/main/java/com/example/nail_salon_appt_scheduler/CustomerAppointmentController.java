@@ -31,7 +31,7 @@ public class CustomerAppointmentController {
 
     @PostMapping
     public ResponseEntity<?> bookAppointment(
-            @RequestBody BookingRequest request,
+            @jakarta.validation.Valid @RequestBody BookingRequest request,
             HttpServletRequest httpRequest) {
 
         UserAccount customer =
@@ -98,11 +98,15 @@ public class CustomerAppointmentController {
     }
 
 
+    public record BookingRequest(@jakarta.validation.constraints.NotNull @jakarta.validation.constraints.Positive Long slotId) {
 
+        public BookingRequest(Long slotId) {
+            this.slotId = slotId;
+        }
 
-
-
-
-    public record BookingRequest(Long slotId) {}
+        public Long getSlotId() {
+            return slotId;
+        }
+    }
 }
 

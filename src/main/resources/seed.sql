@@ -25,22 +25,20 @@ VALUES
     ('Nail Art', 90, 70.00)
 ON CONFLICT (name) DO NOTHING;
 
+-- Seed one fixed demo batch only when a provider has no slots at all.
+-- Restarting tomorrow does not add another batch or revive removed slots.
 INSERT INTO availability_slots (provider_id, service_id, start_at, end_at)
-SELECT p.provider_id, s.service_id, v.start_at, v.end_at
-FROM (
-    VALUES
-        ('anna',  'Basic Manicure', '2026-10-01 10:00:00-07'::timestamptz, '2026-10-01 10:30:00-07'::timestamptz),
-        ('anna',  'Nail Art',        '2026-10-01 11:00:00-07'::timestamptz, '2026-10-01 12:30:00-07'::timestamptz),
-        ('sofia', 'Gel Manicure',   '2026-10-02 10:00:00-07'::timestamptz, '2026-10-02 11:00:00-07'::timestamptz),
-        ('sofia', 'Basic Manicure', '2026-10-02 11:30:00-07'::timestamptz, '2026-10-02 12:00:00-07'::timestamptz)
-) AS v(username, service_name, start_at, end_at)
+SELECT p.provider_id, s.service_id,
+       ((CURRENT_DATE + v.days_ahead) + v.start_time) AT TIME ZONE 'America/Los_Angeles',
+       ((CURRENT_DATE + v.days_ahead) + v.start_time) AT TIME ZONE 'America/Los_Angeles'
+           + s.duration_minutes * INTERVAL '1 minute'
+FROM (VALUES
+    ('anna', 'Basic Manicure', 2, TIME '10:00'),
+    ('anna', 'Nail Art', 2, TIME '11:00'),
+    ('sofia', 'Gel Manicure', 3, TIME '10:00'),
+    ('sofia', 'Basic Manicure', 3, TIME '11:30')
+) AS v(username, service_name, days_ahead, start_time)
 JOIN users u ON u.username = v.username
 JOIN providers p ON p.user_id = u.user_id
 JOIN services s ON s.name = v.service_name
-WHERE NOT EXISTS (
-    SELECT 1
-    FROM availability_slots existing
-    WHERE existing.provider_id = p.provider_id
-      AND existing.service_id = s.service_id
-      AND existing.start_at = v.start_at
-);
+WHERE NOT EXISTS (SELECT 1 FROM availability_slots existing WHERE existing.provider_id = p.provider_id);

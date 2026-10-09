@@ -22,7 +22,7 @@ public class AppointmentService {
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public Long bookAppointment(Long customerId, Long slotId) {
 
-        if (customerId == null || slotId == null) {
+        if (customerId == null || customerId <= 0 || slotId == null || slotId <= 0) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "Customer and slot are required"
@@ -52,19 +52,26 @@ public class AppointmentService {
             );
         }
 
-        return appointmentRepository.createAppointment(
-                customerId,
-                slotId
-        );
+        try {
+            return appointmentRepository.createAppointment(customerId, slotId);
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Slot is already booked", e);
+        }
     }
 
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public java.util.List<AppointmentView> getCustomerAppointments(Long customerId) {
 
+        appointmentRepository.completePastAppointments();
         return appointmentRepository.findByCustomerId(customerId);
     }
 
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public BigDecimal cancelAppointment(Long customerId,Long appointmentId) {
 
+        if (customerId == null || customerId <= 0 || appointmentId == null || appointmentId <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Valid customer and appointment are required");
+        }
         AppointmentCancelInfo appointment =
                 appointmentRepository
                         .lockCustomerAppointment(
@@ -93,15 +100,11 @@ public class AppointmentService {
             );
         }
 
-        long hoursUntilAppointment =
-                Duration.between(
-                        now,
-                        appointment.startAt()
-                ).toHours();
+        Duration untilAppointment = Duration.between(now, appointment.startAt());
 
         BigDecimal fee = BigDecimal.ZERO;
 
-        if (hoursUntilAppointment < 5) {
+        if (untilAppointment.compareTo(Duration.ofHours(5)) < 0) {
             fee = new BigDecimal("10.00");
         }
 

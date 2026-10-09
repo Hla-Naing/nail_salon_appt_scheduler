@@ -19,18 +19,18 @@ public class AuthService {
 
         if (username == null || username.isBlank()
                 || password == null || password.isBlank()) {
-            throw new IllegalArgumentException(
-                    "Username and password are required");
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST, "Username and password are required");
         }
 
         UserAccount user = userRepository.findByUsername(username)
                 .orElseThrow(() ->
-                        new IllegalArgumentException(
-                                "Invalid username or password"));
+                        new org.springframework.web.server.ResponseStatusException(
+                                org.springframework.http.HttpStatus.UNAUTHORIZED, "Invalid username or password"));
 
         if (!passwordEncoder.matches(password, user.passwordHash())) {
-            throw new IllegalArgumentException(
-                    "Invalid username or password");
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.UNAUTHORIZED, "Invalid username or password");
         }
 
         return user;

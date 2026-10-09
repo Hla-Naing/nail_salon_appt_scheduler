@@ -12,6 +12,9 @@ public class SalonService {
         this.repository = repository;
     }
 
+    public List<SalonRepository.Choice> providers() { return repository.providers(); }
+    public List<SalonRepository.Choice> services() { return repository.services(); }
+
     public HomeDto getHome() {
         return new HomeDto(
             "Nail Salon",
@@ -27,7 +30,12 @@ public class SalonService {
         int page,
         int size) {
 
-        int offset = page * size;
+        if (page < 0 || size < 1 || size > 50 || (providerId != null && providerId <= 0)
+                || (serviceId != null && serviceId <= 0)) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST, "Use positive filter IDs, page >= 0 and size between 1 and 50");
+        }
+        long offset = (long) page * size;
 
         return repository.findAvailableSlots(
                 providerId,

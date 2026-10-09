@@ -41,6 +41,9 @@ CREATE TABLE IF NOT EXISTS appointments (
         CHECK (fee_charged >= 0)
 );
 
+-- Withdraw availability without deleting cancelled/completed appointment history.
+ALTER TABLE availability_slots ADD COLUMN IF NOT EXISTS removed_at TIMESTAMPTZ;
+
 CREATE UNIQUE INDEX IF NOT EXISTS one_active_booking_per_slot
     ON appointments(slot_id)
     WHERE status = 'BOOKED';
