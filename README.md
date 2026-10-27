@@ -11,7 +11,7 @@ createdb nail_salon_db
 ./mvnw spring-boot:run
 ```
 
-Open http://localhost:8080/web. The app uses your local PostgreSQL username with no password by default. You can change the connection with `SALON_DB_URL`, `SALON_DB_USER`, and `SALON_DB_PASSWORD`. Tables and demo data are created on startup.
+Open http://localhost:8080/web. 
 
 Demo accounts all use the password `TestPassword123!`:
 
@@ -58,5 +58,3 @@ To check database health and the successful booking count:
 curl http://localhost:8080/health
 curl http://localhost:8080/actuator/metrics/salon.bookings.success
 ```
-
-GitHub Actions builds the project and runs the tests on every push and pull request.
