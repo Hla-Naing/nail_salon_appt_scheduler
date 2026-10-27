@@ -81,10 +81,4 @@ python3 scripts/smoke_test.py --base-url http://localhost:18080 --disposable-dat
 
 The script uses real curl requests and temporary cookie jars. It creates and cancels appointments, and retains that history in the disposable database.
 
-## Submission material
 
-- [Report draft](docs/Milestone2_Report_Draft.md)
-- [5–7 minute code walkthrough](docs/Milestone2_Code_Walkthrough.md)
-- [Verification results and complete changed-file inventory](docs/Milestone2_Verification.md)
-
-Rescheduling is not implemented in this milestone scope. Record your own screenshots and video, review the report, then commit/push the changes on `milestone-2` for submission.
