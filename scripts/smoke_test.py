@@ -6,6 +6,7 @@ import json
 import re
 import subprocess
 import tempfile
+import uuid
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -33,6 +34,14 @@ with tempfile.TemporaryDirectory(prefix='salon-smoke-') as folder:
         print(f'PASS {code} {method} {path}')
         return json.loads(text) if text.lstrip().startswith(('{', '[')) else text
 
+    assert call('GET', '/health')['database'] == 'UP'
+    call('GET', '/actuator/metrics/salon.bookings.success')
+    notification = {'notificationId': 'smoke-' + uuid.uuid4().hex, 'recipient': 'customer:demo',
+                    'type': 'BOOKING_CONFIRMATION', 'message': 'Smoke check confirmation.'}
+    assert call('POST', '/notifications', body=notification)['status'] == 'RECEIVED'
+    assert call('POST', '/notifications', body=notification)['status'] == 'DUPLICATE'
+    call('POST', '/notifications', 409, body={**notification, 'message': 'Changed content'})
+    call('POST', '/notifications', 400, body={})
     call('GET', '/web')
     html = call('GET', '/web/slots')
     call('GET', '/web/login')

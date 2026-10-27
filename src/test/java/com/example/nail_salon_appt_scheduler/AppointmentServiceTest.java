@@ -18,7 +18,7 @@ class AppointmentServiceTest {
     AppointmentService service;
     @BeforeEach void setup() {
         repository = mock(AppointmentRepository.class);
-        service = new AppointmentService(repository);
+        service = new AppointmentService(repository, mock(org.springframework.context.ApplicationEventPublisher.class));
     }
     void status(int code, Runnable action) {
         assertEquals(code, assertThrows(ResponseStatusException.class, action::run).getStatusCode().value());

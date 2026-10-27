@@ -29,6 +29,11 @@ abstract class PostgresWorkflowSuite {
     @Autowired AuthService auth;
     @Autowired UserRepository users;
     @Autowired MockMvc mvc;
+    @Autowired javax.sql.DataSource dataSource;
+    @Autowired org.springframework.transaction.PlatformTransactionManager transactionManager;
+    @Autowired io.micrometer.core.instrument.MeterRegistry metrics;
+    @org.springframework.test.context.bean.override.mockito.MockitoSpyBean
+    NotificationGateway gateway;
     long customer1, customer2, providerUser, otherProviderUser, providerId, otherProviderId, serviceId, slotId;
     String suffix;
     OffsetDateTime start;
@@ -54,6 +59,7 @@ abstract class PostgresWorkflowSuite {
                 Long.class,owner,serviceId,time,time.plusHours(1));
     }
     @AfterEach void cleanupOnlyOurFixtures() {
+        jdbc.update("DELETE FROM notification_receipts WHERE notification_id LIKE ?", "test-" + suffix + "%");
         jdbc.update("DELETE FROM appointments WHERE slot_id IN (SELECT slot_id FROM availability_slots WHERE service_id=?)",serviceId);
         jdbc.update("DELETE FROM availability_slots WHERE service_id=?",serviceId);
         jdbc.update("DELETE FROM services WHERE service_id=?",serviceId);
@@ -296,4 +302,122 @@ abstract class PostgresWorkflowSuite {
         mvc.perform(get("/web/provider").session(login("provider"))).andExpect(status().isOk());
         mvc.perform(get("/web/provider").session(customer)).andExpect(status().isForbidden());
     }
+    @Test void committedBookingAndCancellationSurviveUnavailableNotificationService() throws Exception {
+        assertEquals("http://127.0.0.1:1", notificationSettings.getBaseUrl().toString());
+        var observations = new ArrayList<String>();
+        var deliveryResults = new ArrayList<Boolean>();
+        org.mockito.Mockito.doAnswer(call -> {
+            NotificationRequest request = call.getArgument(0);
+            assertFalse(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive(),
+                    "No active transaction is allowed during outbound HTTP");
+            String id = request.notificationId().substring(request.notificationId().lastIndexOf('-') + 1);
+            // An independent connection proves visibility of the commit before the HTTP attempt.
+            try (var connection = dataSource.getConnection();
+                 var statement = connection.prepareStatement("SELECT status FROM appointments WHERE appointment_id=?")) {
+                statement.setLong(1, Long.parseLong(id));
+                try (var rows = statement.executeQuery()) {
+                    assertTrue(rows.next());
+                    observations.add(rows.getString(1));
+                }
+            }
+            deliveryResults.add((Boolean) call.callRealMethod());
+            return false;
+        }).when(gateway).send(org.mockito.ArgumentMatchers.any());
+        var customer = login("customer1");
+        double before = metrics.get("salon.bookings.success").counter().count();
+        mvc.perform(post("/customer/appointments").session(customer).contentType("application/json")
+                .content("{\"slotId\":" + slotId + "}")).andExpect(status().isCreated());
+        long id = jdbc.queryForObject("SELECT appointment_id FROM appointments WHERE slot_id=?", Long.class, slotId);
+        assertEquals("BOOKED", jdbc.queryForObject("SELECT status FROM appointments WHERE appointment_id=?", String.class, id));
+        assertEquals(before + 1, metrics.get("salon.bookings.success").counter().count());
+        mvc.perform(delete("/customer/appointments/" + id).session(customer)).andExpect(status().isOk());
+        assertEquals("CANCELLED", jdbc.queryForObject("SELECT status FROM appointments WHERE appointment_id=?", String.class, id));
+        assertEquals(List.of("BOOKED", "CANCELLED"), observations);
+        assertEquals(List.of(false, false), deliveryResults);
+        org.mockito.Mockito.verify(gateway, org.mockito.Mockito.times(2)).send(org.mockito.ArgumentMatchers.any());
+    }
+    @Autowired NotificationProperties notificationSettings;
+
+    @Test void websiteBookingAndCancellationUseSharedNotificationsDuringOutage() throws Exception {
+        var customer = login("customer1");
+        mvc.perform(get("/web/slots").session(customer)).andExpect(status().isOk());
+        String csrf = (String) customer.getAttribute("csrfToken");
+        mvc.perform(post("/web/book").session(customer).param("csrfToken", csrf).param("slotId", "" + slotId))
+                .andExpect(status().is3xxRedirection());
+        long id = jdbc.queryForObject("SELECT appointment_id FROM appointments WHERE slot_id=?", Long.class, slotId);
+        mvc.perform(post("/web/appointments/" + id + "/cancel").session(customer).param("csrfToken", csrf))
+                .andExpect(redirectedUrl("/web/appointments"));
+        assertEquals("CANCELLED", jdbc.queryForObject("SELECT status FROM appointments WHERE appointment_id=?", String.class, id));
+        var requests = org.mockito.ArgumentCaptor.forClass(NotificationRequest.class);
+        org.mockito.Mockito.verify(gateway, org.mockito.Mockito.times(2)).send(requests.capture());
+        assertEquals(List.of("BOOKING_CONFIRMATION", "CANCELLATION_CONFIRMATION"),
+                requests.getAllValues().stream().map(NotificationRequest::type).toList());
+        assertTrue(requests.getValue().message().contains("$0.00"));
+    }
+
+    @Test void failedBookingAndOuterTransactionRollbackDoNotNotifyOrCountSuccess() {
+        double before = metrics.get("salon.bookings.success").counter().count();
+        assertThrows(ResponseStatusException.class, () -> booking.bookAppointment(customer1, -1L));
+        var tx = new org.springframework.transaction.support.TransactionTemplate(transactionManager);
+        tx.executeWithoutResult(status -> {
+            booking.bookAppointment(customer1, slotId);
+            status.setRollbackOnly();
+        });
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM appointments WHERE slot_id=?", Integer.class, slotId));
+        assertEquals(before, metrics.get("salon.bookings.success").counter().count());
+        org.mockito.Mockito.verifyNoInteractions(gateway);
+    }
+
+    @Test void cancellationRollbackDoesNotNotify() {
+        jdbc.update("INSERT INTO appointments(customer_id,slot_id) VALUES (?,?)", customer1, slotId);
+        long id = jdbc.queryForObject("SELECT appointment_id FROM appointments WHERE slot_id=?", Long.class, slotId);
+        var tx = new org.springframework.transaction.support.TransactionTemplate(transactionManager);
+        tx.executeWithoutResult(status -> {
+            booking.cancelAppointment(customer1, id);
+            status.setRollbackOnly();
+        });
+        assertEquals("BOOKED", jdbc.queryForObject("SELECT status FROM appointments WHERE appointment_id=?", String.class, id));
+        org.mockito.Mockito.verifyNoInteractions(gateway);
+    }
+
+    @Test void notificationReceiptsDeduplicateAndRejectChangedPayload() throws Exception {
+        String id = "test-" + suffix;
+        String body = "{\"notificationId\":\"" + id + "\",\"recipient\":\"customer:1\",\"type\":\"BOOKING_CONFIRMATION\",\"message\":\"Confirmed\"}";
+        mvc.perform(post("/notifications").contentType("application/json").content(body))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("RECEIVED"));
+        mvc.perform(post("/notifications").contentType("application/json").content(body))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("DUPLICATE"));
+        mvc.perform(post("/notifications").contentType("application/json").content(body.replace("Confirmed", "Changed")))
+                .andExpect(status().isConflict());
+        assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM notification_receipts WHERE notification_id=?", Integer.class, id));
+    }
+
+    @Test void concurrentNotificationRetriesHaveOnlyOneReceipt() throws Exception {
+        var pool = Executors.newFixedThreadPool(2);
+        var startTogether = new CountDownLatch(1);
+        String id = "test-" + suffix;
+        String body = "{\"notificationId\":\"" + id + "\",\"recipient\":\"customer:1\",\"type\":\"BOOKING_CONFIRMATION\",\"message\":\"Confirmed\"}";
+        try {
+            List<Future<String>> replies = new ArrayList<>();
+            for (int i = 0; i < 2; i++) replies.add(pool.submit(() -> {
+                assertTrue(startTogether.await(5, TimeUnit.SECONDS));
+                return mvc.perform(post("/notifications").contentType("application/json").content(body))
+                        .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+            }));
+            startTogether.countDown();
+            var statuses = new ArrayList<String>();
+            for (var reply : replies) statuses.add(reply.get(10, TimeUnit.SECONDS));
+            assertEquals(1, statuses.stream().filter(reply -> reply.contains("RECEIVED")).count());
+            assertEquals(1, statuses.stream().filter(reply -> reply.contains("DUPLICATE")).count());
+            assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM notification_receipts WHERE notification_id=?", Integer.class, id));
+        } finally { pool.shutdownNow(); }
+    }
+
+    @Test void publicHealthAndMetricsExposeActualDatabaseAndBookingCount() throws Exception {
+        mvc.perform(get("/health")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("UP")).andExpect(jsonPath("$.database").value("UP"));
+        mvc.perform(get("/actuator/metrics/salon.bookings.success")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("salon.bookings.success"));
+    }
+
 }

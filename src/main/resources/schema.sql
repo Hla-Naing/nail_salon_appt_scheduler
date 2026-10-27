@@ -51,3 +51,10 @@ ALTER TABLE availability_slots ADD COLUMN IF NOT EXISTS removed_at TIMESTAMPTZ;
 CREATE UNIQUE INDEX IF NOT EXISTS one_active_booking_per_slot
     ON appointments(slot_id)
     WHERE status = 'BOOKED';
+
+-- Mock receiver receipts survive restarts; no recipient or message text is retained.
+CREATE TABLE IF NOT EXISTS notification_receipts (
+    notification_id VARCHAR(100) PRIMARY KEY,
+    payload_hash CHAR(64) NOT NULL,
+    received_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
