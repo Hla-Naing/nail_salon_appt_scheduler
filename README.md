@@ -143,15 +143,12 @@ NOTIFICATION_BASE_URL=http://app:8080 docker compose up -d --force-recreate app
 
 GitHub Actions runs `./mvnw -B clean verify` on Java 21 with PostgreSQL on every push/PR. It asserts the local database suite actually runs. Neither unit tests nor integration tests require an app running on port 8080; the test gateway uses an ephemeral HTTP server or a deliberately unavailable destination.
 
-Verified locally on October 27, 2026: **59 passed, 0 failures/errors, 16 skipped** out of 75 discovered tests. All 16 PostgreSQL integration cases passed; only the duplicate Docker-backed variant skipped. The packaged app passed **58 HTTP smoke checks**, including actual booking/cancellation notification delivery. Compose configuration validated, but image build/startup and hosted CI were not run. Local verification used JDK 22.0.2 with compiler release 21; Java 21 runtime is configured in CI/Docker and remains unverified here. See [verification details](docs/Milestone3_Verification.md).
+Verified locally on October 27, 2026: **59 passed, 0 failures/errors, 16 skipped** out of 75 discovered tests. All 16 PostgreSQL integration cases passed; only the duplicate Docker-backed variant skipped. The packaged app passed **58 HTTP smoke checks**, including actual booking/cancellation notification delivery. Compose configuration validated, but image build/startup and hosted CI were not run. Local verification used JDK 22.0.2 with compiler release 21; Java 21 runtime is configured in CI/Docker and remains unverified here.
 
-- [Report (PDF)](docs/CMPE172_Milestone3_Report.pdf) and [editable Markdown](docs/CMPE172_Milestone3_Report.md).
-- [Distribution diagram (PNG)](docs/Milestone3_Distribution.png), [PDF](docs/Milestone3_Distribution.pdf), and [Mermaid](docs/Milestone3_Distribution.mmd).
 - [5–7 minute code-walkthrough script](Milestone3_Demo_Script.md).
-- [Machine-readable test counts](docs/Milestone3_Test_Results.json).
 - `CMPE172_Milestone3_FirstName_LastName.zip` in the repository root. Replace name placeholders before submission; no submission URL is invented.
 
-Rebuild the archive with `python3 scripts/package_milestone3.py`. It includes source, tests, Docker/CI configuration and documentation, excluding `.git`, secrets, caches and compiled files. The PDF/diagram renderer is an optional documentation tool: install `reportlab==5.1.0` in a separate Python environment, then run `python scripts/render_milestone3.py`; Java builds do not need it.
+The existing submission ZIP contains the previously generated report and diagram. Keep those required deliverables separately when preparing your final submission; the application does not need a documentation folder.
 
 Review and commit on the current `milestone3` branch when ready:
 

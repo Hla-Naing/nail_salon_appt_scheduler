@@ -98,12 +98,12 @@ If Docker cannot run on the recording machine, explicitly say that Compose confi
 
 ## 5:20–6:25 — Prove the important integration behavior
 
-Open `PostgresWorkflowSuite.java`, especially `committedBookingAndCancellationSurviveUnavailableNotificationService`, plus `NotificationGatewayTest.java` and `docs/Milestone3_Test_Results.json`.
+Open `PostgresWorkflowSuite.java`, especially `committedBookingAndCancellationSurviveUnavailableNotificationService`, plus `NotificationGatewayTest.java` and the generated test results in `target/surefire-reports/`.
 
 “This integration test uses the real Spring service proxy, real PostgreSQL and the real HTTP gateway pointing to an unavailable service. Before the outbound call, a separate database connection sees the committed appointment. The test checks no active sending transaction, verifies gateway fallback, and still expects successful REST booking and cancellation responses.
 
 “Other tests verify the website path, rollback suppression, receipt deduplication and concurrent double-booking prevention. Gateway tests start their own HTTP server on an ephemeral port, so they do not depend on a manually running app. They exercise successful delivery, response timeouts, retries and recovery.
 
-“The recorded local build passed 59 tests with zero failures or errors. Sixteen duplicate Testcontainers cases were skipped because Docker was unavailable; the same sixteen workflow cases passed against local PostgreSQL. I also ran fifty-eight HTTP smoke checks against the packaged application. The local JDK was 22 compiling for Java 21; Docker and CI are configured to run Java 21. These documents distinguish actual results from checks still requiring those environments.”
+“The recorded local build passed 59 tests with zero failures or errors. Sixteen duplicate Testcontainers cases were skipped because Docker was unavailable; the same sixteen workflow cases passed against local PostgreSQL. I also ran fifty-eight HTTP smoke checks against the packaged application. The local JDK was 22 compiling for Java 21; Docker and CI are configured to run Java 21. The README distinguishes actual results from checks still requiring those environments.”
 
-Show the terminal build summary and the report/diagram files. Finish by identifying the ZIP and the 5–7 minute video as separate submission items. Do not claim the video has already been uploaded.
+Show the terminal build summary. The previously generated report and diagram are available inside the submission ZIP. Finish by identifying the ZIP and the 5–7 minute video as separate submission items. Do not claim the video has already been uploaded.
