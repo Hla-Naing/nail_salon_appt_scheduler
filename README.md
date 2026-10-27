@@ -139,28 +139,3 @@ docker compose logs --tail=100 app
 NOTIFICATION_BASE_URL=http://app:8080 docker compose up -d --force-recreate app
 ```
 
-## Milestone 3 verification and submission
-
-GitHub Actions runs `./mvnw -B clean verify` on Java 21 with PostgreSQL on every push/PR. It asserts the local database suite actually runs. Neither unit tests nor integration tests require an app running on port 8080; the test gateway uses an ephemeral HTTP server or a deliberately unavailable destination.
-
-Verified locally on October 27, 2026: **59 passed, 0 failures/errors, 16 skipped** out of 75 discovered tests. All 16 PostgreSQL integration cases passed; only the duplicate Docker-backed variant skipped. The packaged app passed **58 HTTP smoke checks**, including actual booking/cancellation notification delivery. Compose configuration validated, but image build/startup and hosted CI were not run. Local verification used JDK 22.0.2 with compiler release 21; Java 21 runtime is configured in CI/Docker and remains unverified here.
-
-- [5–7 minute code-walkthrough script](Milestone3_Demo_Script.md).
-- `CMPE172_Milestone3_FirstName_LastName.zip` in the repository root. Replace name placeholders before submission; no submission URL is invented.
-
-The existing submission ZIP contains the previously generated report and diagram. Keep those required deliverables separately when preparing your final submission; the application does not need a documentation folder.
-
-Review and commit on the current `milestone3` branch when ready:
-
-```sh
-git status --short
-git diff --check
-git diff
-# Inspect new files too; then stage and review everything:
-git add .
-git diff --cached --stat
-git diff --cached
-git commit -m "Complete Milestone 3 integration and deployment"
-```
-
-No commits or pushes were made by the implementation task. The generated ZIP is ignored by Git and should be submitted separately.
