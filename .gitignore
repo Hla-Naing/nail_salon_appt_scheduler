@@ -37,3 +37,9 @@ cookies.txt
 maya_cookies.txt
 lily_cookies.txt
 anna_cookies.txt
+
+# Deployment credentials and generated submission archive
+.env
+.env.*
+!.env.example
+CMPE172_Milestone3_*.zip

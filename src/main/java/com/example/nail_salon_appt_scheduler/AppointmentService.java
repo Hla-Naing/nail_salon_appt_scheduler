@@ -6,6 +6,7 @@ import java.time.OffsetDateTime;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -14,9 +15,11 @@ import org.springframework.web.server.ResponseStatusException;
 public class AppointmentService {
 
     private final AppointmentRepository appointmentRepository;
+    private final ApplicationEventPublisher events;
 
-    public AppointmentService(AppointmentRepository appointmentRepository) {
+    public AppointmentService(AppointmentRepository appointmentRepository, ApplicationEventPublisher events) {
         this.appointmentRepository = appointmentRepository;
+        this.events = events;
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -53,7 +56,11 @@ public class AppointmentService {
         }
 
         try {
-            return appointmentRepository.createAppointment(customerId, slotId);
+            Long id = appointmentRepository.createAppointment(customerId, slotId);
+            events.publishEvent(new AppointmentNotification(new NotificationRequest(
+                    "booking-" + id, "customer:" + customerId, "BOOKING_CONFIRMATION",
+                    "Appointment #" + id + " booked for slot #" + slotId + " starting " + startAt + ".")));
+            return id;
         } catch (org.springframework.dao.DuplicateKeyException e) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Slot is already booked", e);
         }
@@ -112,6 +119,11 @@ public class AppointmentService {
                 appointmentId,
                 fee
         );
+
+        events.publishEvent(new AppointmentNotification(new NotificationRequest(
+                "cancellation-" + appointmentId, "customer:" + customerId, "CANCELLATION_CONFIRMATION",
+                "Appointment #" + appointmentId + " starting " + appointment.startAt()
+                        + " cancelled. Cancellation fee: $" + fee.setScale(2).toPlainString() + ".")));
 
         return fee;
     }

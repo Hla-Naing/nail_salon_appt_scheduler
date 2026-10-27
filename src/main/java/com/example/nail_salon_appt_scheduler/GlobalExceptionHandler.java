@@ -72,7 +72,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> unexpected(Exception e, HttpServletRequest request) {
-        log.error("Request failed: {}", request.getRequestURI(), e);
+        log.error("event=request_unexpected_failure path={} cause={}", request.getRequestURI(), e.getClass().getSimpleName());
         return error(500, "An unexpected server error occurred", request);
     }
 }

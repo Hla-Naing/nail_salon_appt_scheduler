@@ -1,0 +1,30 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: nail_salon_db
+      POSTGRES_USER: salon
+      POSTGRES_PASSWORD: ${SALON_DB_PASSWORD:?Set SALON_DB_PASSWORD in your shell or local .env}
+    volumes:
+      - salon-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U salon -d nail_salon_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+  app:
+    build: .
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      SALON_DB_URL: jdbc:postgresql://db:5432/nail_salon_db
+      SALON_DB_USER: salon
+      SALON_DB_PASSWORD: ${SALON_DB_PASSWORD:?Set SALON_DB_PASSWORD in your shell or local .env}
+      NOTIFICATION_BASE_URL: ${NOTIFICATION_BASE_URL:-http://app:8080}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+volumes:
+  salon-data:
