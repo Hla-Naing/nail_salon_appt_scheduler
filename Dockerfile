@@ -4,7 +4,7 @@ COPY .mvn/ .mvn/
 COPY mvnw pom.xml ./
 RUN chmod +x mvnw && ./mvnw -B dependency:go-offline
 COPY src/ src/
-RUN ./mvnw -B -DskipTests package
+RUN ./mvnw -B -Dmaven.test.skip=true package
 
 FROM eclipse-temurin:21-jre-jammy
 RUN apt-get update && apt-get install -y --no-install-recommends curl \

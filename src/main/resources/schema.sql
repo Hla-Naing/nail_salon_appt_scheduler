@@ -58,3 +58,14 @@ CREATE TABLE IF NOT EXISTS notification_receipts (
     payload_hash CHAR(64) NOT NULL,
     received_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- One reminder per booked appointment. Persist the exact request before HTTP delivery.
+CREATE TABLE IF NOT EXISTS appointment_reminders (
+    appointment_id BIGINT PRIMARY KEY REFERENCES appointments(appointment_id) ON DELETE CASCADE,
+    notification_id VARCHAR(100) NOT NULL UNIQUE,
+    claim_id UUID NOT NULL,
+    available_at TIMESTAMPTZ NOT NULL,
+    attempts INTEGER NOT NULL CHECK (attempts BETWEEN 1 AND 5),
+    message VARCHAR(1000),
+    sent_at TIMESTAMPTZ
+);

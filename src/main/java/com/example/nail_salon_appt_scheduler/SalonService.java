@@ -15,6 +15,12 @@ public class SalonService {
     public List<SalonRepository.Choice> providers() { return repository.providers(); }
     public List<SalonRepository.Choice> services() { return repository.services(); }
 
+    public SlotDto getAvailableSlot(long slotId) {
+        return repository.findAvailableSlot(slotId).orElseThrow(() ->
+                new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.CONFLICT, "Slot is no longer available"));
+    }
+
     public HomeDto getHome() {
         return new HomeDto(
             "Nail Salon",

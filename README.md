@@ -1,6 +1,6 @@
-# Nail Salon Appointment Scheduler — Milestone 3
+# Nail Salon Appointment Scheduler — Milestone 4
 
-CMPE 172 appointment booking with Java 21, Spring Boot, PostgreSQL, JdbcTemplate, Thymeleaf and Bootstrap. No ORM. Controllers call services, which call repositories containing explicit SQL.
+CMPE 172 appointment booking with Java 21, Spring Boot, PostgreSQL, JdbcTemplate, Thymeleaf and Bootstrap. No ORM. Controllers call services, which call repositories containing explicit SQL. Milestone 4 adds a Spring AI appointment assistant, automated reminders, and a searchable salon FAQ.
 
 ## Run
 
@@ -48,8 +48,75 @@ The forms use server sessions, database role checks, and CSRF tokens. Password h
 | GET | `/provider/slots` | PROVIDER; own future availability |
 | POST | `/provider/slots` | PROVIDER; JSON `serviceId`, `startAt`, `endAt` |
 | DELETE | `/provider/slots/{slotId}` | PROVIDER; own unbooked slot |
+| POST | `/ai/chat` | CUSTOMER; JSON `message` |
+| POST | `/ai/actions/confirm` | CUSTOMER; JSON `token` from the pending action |
+| POST | `/ai/reminders/run` | PROVIDER; own upcoming appointments; requires `X-Salon-AI` header |
+| POST | `/ai/knowledge/reload` | PROVIDER; rebuild the FAQ index; requires `X-Salon-AI` header |
 
 Errors use `timestamp`, `status`, `error`, `message`, and `path`. Page size is 1–50; page starts at zero. Less than 5 hours before start costs $10 to cancel; earlier cancellations cost $0. Appointments that have started cannot be cancelled. History reads update past BOOKED rows to COMPLETED once the slot ends. Availability removal sets `removed_at` so history survives.
+
+## Milestone 4 demo
+
+Set `GEMINI_API_KEY` in your private `.env` for Compose, or export it for a local Maven or JAR run. Use `docker compose up -d --build` to apply the repository changes with the existing database volume. The scheduler and health endpoints work without the key. Gemini chat, embeddings, and new reminders require a key with access to the configured models.
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `GEMINI_CHAT_MODEL` | `gemini-3.1-flash-lite` | Chat tools and reminder text |
+| `GEMINI_EMBEDDING_MODEL` | `gemini-embedding-001` | Embed FAQ sections and queries |
+| `SALON_AI_TIMEOUT_MS` | `8000` | Per-attempt Gemini HTTP timeout |
+| `SALON_REMINDER_WINDOW` | `PT24H` | Look ahead up to 24 hours |
+| `SALON_REMINDER_INTERVAL` | `PT5M` | Delay between scheduled scans |
+| `SALON_AI_KNOWLEDGE_SOURCE` | `classpath:knowledge/salon-faq.md` | Markdown resource location for local/JAR runs |
+| `SALON_APP_PORT` | `8080` | Compose host port |
+
+Use a disposable demo database when creating records for a walkthrough. The example uses the seeded accounts shown above and private temporary cookie jars.
+
+```sh
+base=http://localhost:8080
+demo_dir=$(mktemp -d)
+trap 'rm -r "$demo_dir"' EXIT
+curl -fsS -c "$demo_dir/customer.cookies" -H 'Content-Type: application/json' \
+  -d '{"username":"maya","password":"TestPassword123!"}' "$base/auth/login"
+curl -fsS -c "$demo_dir/provider.cookies" -H 'Content-Type: application/json' \
+  -d '{"username":"anna","password":"TestPassword123!"}' "$base/auth/login"
+
+chat() {
+  curl -fsS -b "$demo_dir/customer.cookies" -H 'Content-Type: application/json' \
+    -d "$1" "$base/ai/chat"
+}
+chat '{"message":"What is the late cancellation fee?"}'
+chat '{"message":"Which services and providers have openings this week?"}'
+```
+
+- **Agent 1**. Pick a returned slot and continue the same session with `chat '{"message":"Prepare a booking for slot 123"}'`, substituting the actual slot ID. Review `pendingAction.details`, then use the token from `pendingAction.token` in the request below. A follow-up such as “yes” in chat is conversational only. Ask to list your appointments, choose the new appointment, and request a cancellation draft. Review its fee and confirm using its own token. Reusing a token returns HTTP 400.
+
+```sh
+curl -fsS -b "$demo_dir/customer.cookies" -H 'Content-Type: application/json' \
+  -d '{"token":"REPLACE_WITH_PENDING_ACTION_TOKEN"}' "$base/ai/actions/confirm"
+```
+
+- **Agent 2**. Create an Anna slot within the next 24 hours via `/web/provider`. Book it as Maya and leave it booked. Run the provider command twice before the next scheduled scan. The first result should show one delivered reminder if Gemini and the gateway are available. The second should show zero for that appointment. If the schedule already ran, use the app log to find the earlier receipt.
+
+```sh
+curl -fsS -b "$demo_dir/provider.cookies" -H 'X-Salon-AI: true' -X POST "$base/ai/reminders/run"
+docker compose logs app --tail 100 | rg 'event=notification_received .*type=APPOINTMENT_REMINDER'
+```
+
+- **RAG**. Ask “What is the fee if I cancel two hours before my appointment?” and check the response and retrieved `sources`. Ask “What should I bring for nail art?” for a different knowledge section. Rebuild the in-memory index using the provider command below. Update the packaged Markdown and rebuild, or point a local run at a trusted `file:` resource before reloading.
+
+```sh
+curl -fsS -b "$demo_dir/provider.cookies" -H 'X-Salon-AI: true' -X POST "$base/ai/knowledge/reload"
+```
+
+See the [Milestone 4 report](docs/CMPE172_Milestone4_Report.md) and [video walkthrough](docs/Milestone4_Code_Walkthrough.md).
+
+## Milestone 4 verification
+
+Verified November 17, 2026. Maven discovered **106 tests** and finished with **86 passed, 0 failures or errors, and 20 skipped**. All 20 PostgreSQL Testcontainers tests passed. The alternate `LocalPostgresTest` suite was skipped because `SALON_TEST_DB_URL` was unset. Maven ran on JDK 22 with compiler release 21, and AI tests used mocked models or a local HTTP stub.
+
+The isolated Docker Compose deployment built and started on Temurin Java 21.0.13 with PostgreSQL 16 and Gemini credentials unset. Both services became healthy, `GET /health` confirmed PostgreSQL connectivity, and all 58 existing HTTP smoke checks passed.
+
+Using the private key on that isolated stack, both configured Gemini model metadata requests returned HTTP 200. The live demo retrieved the cancellation policy and answered $10, found an actual slot, prepared and confirmed a booking, rejected token replay, sent one provider-triggered reminder, returned zero new deliveries on the repeat run, and confirmed a cancellation. A scheduled-only run sent a reminder for a second synthetic booking. PostgreSQL contained one matching durable receipt per appointment.
 
 ## Tests and build
 
@@ -71,7 +138,7 @@ export SALON_TEST_DB_PASSWORD=''
 ./mvnw clean package
 ```
 
-`LocalPostgresTest` and `PostgresContainerTest` inherit the same 16 tests, including Milestone 3 notification and transaction checks. Tests create unique fixture accounts and slots and clean up only their own records. They do not use the development database or seed accounts. If neither Docker nor `SALON_TEST_DB_URL` is available, both integration variants are skipped: a green unit-only run does **not** prove concurrency correctness.
+`LocalPostgresTest` and `PostgresContainerTest` inherit the same PostgreSQL tests, including Milestone 3 notification checks and Milestone 4 confirmation and reminder concurrency checks. Tests create unique fixture accounts and slots and clean up only their own records. They do not use the development database or seed accounts. If neither Docker nor `SALON_TEST_DB_URL` is available, both integration variants are skipped: a green unit-only run does **not** prove concurrency correctness.
 
 To repeat curl smoke checks, start another app instance against a disposable database seeded by the app (not `salon_m2_test` or your development database), then run:
 

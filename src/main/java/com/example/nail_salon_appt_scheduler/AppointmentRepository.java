@@ -11,6 +11,42 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class AppointmentRepository {
 
+    private static final String CUSTOMER_APPOINTMENTS = """
+                SELECT
+                    a.appointment_id,
+                    a.slot_id,
+                    u.name AS provider_name,
+                    s.name AS service_name,
+                    s.price,
+                    av.start_at,
+                    av.end_at,
+                    a.status,
+                    a.fee_charged
+                FROM appointments a
+                JOIN availability_slots av
+                    ON a.slot_id = av.slot_id
+                JOIN providers p
+                    ON av.provider_id = p.provider_id
+                JOIN users u
+                    ON p.user_id = u.user_id
+                JOIN services s
+                    ON av.service_id = s.service_id
+                WHERE a.customer_id = ?
+                """;
+
+    private static final org.springframework.jdbc.core.RowMapper<AppointmentView> APPOINTMENT_MAPPER =
+            (rs, rowNum) -> new AppointmentView(
+                        rs.getLong("appointment_id"),
+                        rs.getLong("slot_id"),
+                        rs.getString("provider_name"),
+                        rs.getString("service_name"),
+                        rs.getBigDecimal("price"),
+                        rs.getObject("start_at", OffsetDateTime.class),
+                        rs.getObject("end_at", OffsetDateTime.class),
+                        rs.getString("status"),
+                        rs.getBigDecimal("fee_charged")
+                );
+
     private final JdbcTemplate jdbcTemplate;
 
     public AppointmentRepository(JdbcTemplate jdbcTemplate) {
@@ -86,45 +122,12 @@ public class AppointmentRepository {
     // Get all appointments belonging to one customer.
     public List<AppointmentView> findByCustomerId(Long customerId) {
 
-        String sql = """
-                SELECT
-                    a.appointment_id,
-                    a.slot_id,
-                    u.name AS provider_name,
-                    s.name AS service_name,
-                    s.price,
-                    av.start_at,
-                    av.end_at,
-                    a.status,
-                    a.fee_charged
-                FROM appointments a
-                JOIN availability_slots av
-                    ON a.slot_id = av.slot_id
-                JOIN providers p
-                    ON av.provider_id = p.provider_id
-                JOIN users u
-                    ON p.user_id = u.user_id
-                JOIN services s
-                    ON av.service_id = s.service_id
-                WHERE a.customer_id = ?
-                ORDER BY av.start_at
-                """;
+        return jdbcTemplate.query(CUSTOMER_APPOINTMENTS + " ORDER BY av.start_at", APPOINTMENT_MAPPER, customerId);
+    }
 
-        return jdbcTemplate.query(
-                sql,
-                (rs, rowNum) -> new AppointmentView(
-                        rs.getLong("appointment_id"),
-                        rs.getLong("slot_id"),
-                        rs.getString("provider_name"),
-                        rs.getString("service_name"),
-                        rs.getBigDecimal("price"),
-                        rs.getObject("start_at", OffsetDateTime.class),
-                        rs.getObject("end_at", OffsetDateTime.class),
-                        rs.getString("status"),
-                        rs.getBigDecimal("fee_charged")
-                ),
-                customerId
-        );
+    public Optional<AppointmentView> findCustomerAppointment(long customerId, long appointmentId) {
+        return jdbcTemplate.query(CUSTOMER_APPOINTMENTS + " AND a.appointment_id = ?",
+                APPOINTMENT_MAPPER, customerId, appointmentId).stream().findFirst();
     }
 
     // Lock an appointment before cancelling it.
