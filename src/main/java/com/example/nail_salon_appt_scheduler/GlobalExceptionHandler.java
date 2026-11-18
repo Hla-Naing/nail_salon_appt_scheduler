@@ -12,6 +12,7 @@ import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
@@ -49,7 +50,7 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class,
-            MissingServletRequestParameterException.class, ConstraintViolationException.class,
+            MissingServletRequestParameterException.class, MissingRequestHeaderException.class, ConstraintViolationException.class,
             HandlerMethodValidationException.class})
     public ResponseEntity<ApiError> invalid(Exception e, HttpServletRequest request) {
         return error(400, "Invalid or missing input; check IDs, dates and required fields", request);

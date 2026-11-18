@@ -22,7 +22,7 @@ class AppointmentAiToolsTest {
         mock(AppointmentService.class);
 
         AppointmentAiTools tools =
-        new AppointmentAiTools(salonService, appointmentService);
+        new AppointmentAiTools(salonService, appointmentService, mock(BookingConfirmationService.class));
 
         LocalDate date = LocalDate.of(2026, 11, 21);
 
@@ -51,7 +51,7 @@ class AppointmentAiToolsTest {
                 mock(AppointmentService.class);
 
         AppointmentAiTools tools =
-                new AppointmentAiTools(salonService, appointmentService);
+                new AppointmentAiTools(salonService, appointmentService, mock(BookingConfirmationService.class));
 
         Long customerId = 1L;
 
@@ -79,7 +79,7 @@ class AppointmentAiToolsTest {
                 mock(AppointmentService.class);
 
         AppointmentAiTools tools =
-                new AppointmentAiTools(salonService, appointmentService);
+                new AppointmentAiTools(salonService, appointmentService, mock(BookingConfirmationService.class));
 
         ToolContext context = new ToolContext(
                 java.util.Map.of("customerId", 1L)

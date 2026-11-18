@@ -25,6 +25,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 abstract class PostgresWorkflowSuite {
     @Autowired JdbcTemplate jdbc;
     @Autowired AppointmentService booking;
+    @Autowired BookingConfirmationService confirmations;
+    @Autowired ReminderRepository reminders;
     @Autowired ProviderService providers;
     @Autowired AuthService auth;
     @Autowired UserRepository users;
@@ -209,6 +211,106 @@ abstract class PostgresWorkflowSuite {
         } finally {
             go.countDown(); executor.shutdownNow(); assertTrue(executor.awaitTermination(10,TimeUnit.SECONDS));
         }
+    }
+
+    @Test void aiConfirmationUsesExistingPostgresDoubleBookingProtection() throws Exception {
+        var firstSession = login("customer1");
+        var secondSession = login("customer2");
+        var first = confirmations.prepare(firstSession, customer1, confirmations.describeBooking(slotId));
+        var second = confirmations.prepare(secondSession, customer2, confirmations.describeBooking(slotId));
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM appointments WHERE slot_id=?", Integer.class, slotId));
+
+        mvc.perform(post("/ai/actions/confirm").session(firstSession).contentType("application/json")
+                        .content("{\"token\":\"" + first.token() + "\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.kind").value("BOOKING"));
+        mvc.perform(post("/ai/actions/confirm").session(secondSession).contentType("application/json")
+                        .content("{\"token\":\"" + second.token() + "\"}"))
+                .andExpect(status().isConflict());
+        assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM appointments WHERE slot_id=? AND status='BOOKED'",
+                Integer.class, slotId));
+    }
+
+    @Test void aiCancellationRejectsChangedQuoteUnderAppointmentLock() throws Exception {
+        var soon = slot(providerId, OffsetDateTime.now().plusHours(2));
+        long appointmentId = bookedFixture(customer1, soon, "BOOKED");
+        var session = login("customer1");
+        var details = confirmations.describeCancellation(customer1, appointmentId);
+        var outdated = new PendingAppointmentAction.Details(details.kind(), details.targetId(), details.service(),
+                details.provider(), details.startsAt(), java.math.BigDecimal.ZERO, details.summary());
+        var first = confirmations.prepare(session, customer1, outdated);
+        mvc.perform(post("/ai/actions/confirm").session(session).contentType("application/json")
+                        .content("{\"token\":\"" + first.token() + "\"}"))
+                .andExpect(status().isConflict());
+        assertEquals("BOOKED", jdbc.queryForObject("SELECT status FROM appointments WHERE appointment_id=?",
+                String.class, appointmentId));
+
+        var current = confirmations.prepare(session, customer1, confirmations.describeCancellation(customer1, appointmentId));
+        mvc.perform(post("/ai/actions/confirm").session(session).contentType("application/json")
+                        .content("{\"token\":\"" + current.token() + "\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.feeCharged").value(10.0));
+        assertEquals("CANCELLED", jdbc.queryForObject("SELECT status FROM appointments WHERE appointment_id=?",
+                String.class, appointmentId));
+    }
+
+    @Test void reminderQuerySelectsOnlyUpcomingBookedAppointmentsAndRetainsDeliveryAcrossRuns() {
+        var now = OffsetDateTime.now().withNano(0);
+        bookedFixture(customer1, slot(providerId, now.minusHours(2)), "BOOKED");
+        bookedFixture(customer1, slot(providerId, now.plusHours(1)), "CANCELLED");
+        bookedFixture(customer1, slot(providerId, now.plusHours(2)), "COMPLETED");
+        bookedFixture(customer1, slot(otherProviderId, now.plusHours(1)), "BOOKED");
+        bookedFixture(customer1, slotId, "BOOKED");
+        long due = bookedFixture(customer2, slot(providerId, now.plusHours(24)), "BOOKED");
+
+        var first = reminders.claim(now, now.plusHours(24), providerUser).orElseThrow();
+        assertEquals(due, first.appointmentId());
+        assertEquals(customer2, first.customerId());
+        assertTrue(reminders.claim(now, now.plusHours(24), providerUser).isEmpty());
+        assertTrue(reminders.persistPayloadIfUpcoming(first, "Generated test reminder", now));
+        reminders.retryLater(first, now.plusMinutes(5));
+        assertTrue(reminders.claim(now.plusMinutes(4), now.plusHours(24), providerUser).isEmpty());
+
+        var restarted = new ReminderRepository(jdbc);
+        var retry = restarted.claim(now.plusMinutes(5), now.plusHours(24), providerUser).orElseThrow();
+        assertEquals(first.notificationId(), retry.notificationId());
+        assertEquals("Generated test reminder", retry.message());
+        assertNotEquals(first.claimId(), retry.claimId());
+        assertFalse(reminders.persistPayloadIfUpcoming(first, "stale worker", now.plusMinutes(5)));
+        restarted.sent(retry, now.plusMinutes(5));
+        assertTrue(reminders.claim(now.plusMinutes(6), now.plusHours(24), providerUser).isEmpty());
+        assertEquals("BOOKED", jdbc.queryForObject("SELECT status FROM appointments WHERE appointment_id=?",
+                String.class, due));
+    }
+
+    @Test void concurrentReminderScansOnlyClaimOneAndSkipDeliveryIfCancelled() throws Exception {
+        var now = OffsetDateTime.now().withNano(0);
+        var due = bookedFixture(customer1, slot(providerId, now.plusHours(2)), "BOOKED");
+        var ready = new CountDownLatch(2);
+        var start = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            Callable<Optional<ReminderRepository.Claim>> scan = () -> {
+                ready.countDown();
+                assertTrue(start.await(5, TimeUnit.SECONDS));
+                return reminders.claim(now, now.plusHours(24), providerUser);
+            };
+            var first = executor.submit(scan);
+            var second = executor.submit(scan);
+            try {
+                assertTrue(ready.await(5, TimeUnit.SECONDS));
+            } finally {
+                start.countDown();
+            }
+            var claimed = List.of(first.get(5, TimeUnit.SECONDS), second.get(5, TimeUnit.SECONDS)).stream()
+                    .flatMap(Optional::stream).toList();
+            assertEquals(1, claimed.size());
+            assertEquals(due, claimed.getFirst().appointmentId());
+            jdbc.update("UPDATE appointments SET status='CANCELLED' WHERE appointment_id=?", due);
+            assertFalse(reminders.persistPayloadIfUpcoming(claimed.getFirst(), "test reminder", now));
+        }
+    }
+
+    private long bookedFixture(long customerId, long slot, String status) {
+        return jdbc.queryForObject("INSERT INTO appointments(customer_id, slot_id, status) VALUES (?, ?, ?) "
+                + "RETURNING appointment_id", Long.class, customerId, slot, status);
     }
 
     @Test void apiAuthenticationRbacAndValidation() throws Exception {

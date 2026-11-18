@@ -33,13 +33,13 @@ build/
 .vscode/
 
 # Local session credentials
-cookies.txt
-maya_cookies.txt
-lily_cookies.txt
-anna_cookies.txt
+*cookies.txt
+*.cookies
+*.cookiejar
 
 # Deployment credentials and generated submission archive
 .env
 .env.*
 !.env.example
 CMPE172_Milestone3_*.zip
+CMPE172_Milestone4_*.zip

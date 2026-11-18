@@ -73,9 +73,20 @@ public class AppointmentService {
         return appointmentRepository.findByCustomerId(customerId);
     }
 
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    public BigDecimal cancelAppointment(Long customerId,Long appointmentId) {
+    public AppointmentView getCancellationCandidate(long customerId, long appointmentId) {
+        var appointment = appointmentRepository.findCustomerAppointment(customerId, appointmentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Appointment not found"));
+        requireCancellable(appointment.status(), appointment.startAt(), OffsetDateTime.now());
+        return appointment;
+    }
 
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public BigDecimal cancelAppointment(Long customerId, Long appointmentId) {
+        return cancelAppointment(customerId, appointmentId, null);
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public BigDecimal cancelAppointment(Long customerId, Long appointmentId, BigDecimal confirmedFee) {
         if (customerId == null || customerId <= 0 || appointmentId == null || appointmentId <= 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Valid customer and appointment are required");
         }
@@ -91,28 +102,12 @@ public class AppointmentService {
                                         "Appointment not found"
                                 ));
 
-        if (!appointment.status().equals("BOOKED")) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "Appointment is not currently booked"
-            );
-        }
-
         OffsetDateTime now = OffsetDateTime.now();
-
-        if (!appointment.startAt().isAfter(now)) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Past appointments cannot be cancelled"
-            );
-        }
-
-        Duration untilAppointment = Duration.between(now, appointment.startAt());
-
-        BigDecimal fee = BigDecimal.ZERO;
-
-        if (untilAppointment.compareTo(Duration.ofHours(5)) < 0) {
-            fee = new BigDecimal("10.00");
+        requireCancellable(appointment.status(), appointment.startAt(), now);
+        BigDecimal fee = cancellationFee(appointment.startAt(), now);
+        if (confirmedFee != null && confirmedFee.compareTo(fee) != 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "The cancellation fee changed. Prepare a new cancellation to review it.");
         }
 
         appointmentRepository.cancelAppointment(
@@ -128,6 +123,17 @@ public class AppointmentService {
         return fee;
     }
 
+    static BigDecimal cancellationFee(OffsetDateTime startAt, OffsetDateTime now) {
+        return Duration.between(now, startAt).compareTo(Duration.ofHours(5)) < 0
+                ? new BigDecimal("10.00") : BigDecimal.ZERO;
+    }
 
+    private void requireCancellable(String status, OffsetDateTime startAt, OffsetDateTime now) {
+        if (!status.equals("BOOKED")) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Appointment is not currently booked");
+        }
+        if (!startAt.isAfter(now)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Past appointments cannot be cancelled");
+        }
+    }
 }
-
