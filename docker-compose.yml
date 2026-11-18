@@ -22,6 +22,7 @@ services:
       SALON_DB_USER: salon
       SALON_DB_PASSWORD: ${SALON_DB_PASSWORD:?Set SALON_DB_PASSWORD in your shell or local .env}
       NOTIFICATION_BASE_URL: ${NOTIFICATION_BASE_URL:-http://app:8080}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?Set GEMINI_API_KEY in your local .env}
     depends_on:
       db:
         condition: service_healthy
